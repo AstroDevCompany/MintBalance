@@ -1,0 +1,45 @@
+{
+  "$schema": "https://raw.githubusercontent.com/tauri-apps/tauri/v1/schema.json",
+  "build": {
+    "beforeBuildCommand": "npm run build",
+    "beforeDevCommand": "npm run dev",
+    "devPath": "http://localhost:1420",
+    "distDir": "../dist"
+  },
+  "package": {
+    "productName": "MintBalance",
+    "version": "1.0.0"
+  },
+  "tauri": {
+    "windows": [
+      {
+        "title": "MintBalance",
+        "width": 1080,
+        "height": 720,
+        "minWidth": 600,
+        "minHeight": 400,
+        "resizable": true
+      }
+    ],
+    "bundle": {
+      "identifier": "com.mintflow.mintbalance",
+      "publisher": "MintFlow Technologies",
+      "icon": ["icons/icon.ico", "icons/icon.png"]
+    },
+    "allowlist": {
+      "shell": {
+        "open": true
+      },
+      "http": {
+        "all": true,
+        "scope": ["https://auth.mintflow.dev/*"]
+      },
+      "window": {
+        "setIcon": true
+      }
+    },
+    "security": {
+      "csp": null
+    }
+  }
+}
