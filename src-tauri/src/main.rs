@@ -1,9 +1,11 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+use std::env;
 use std::path::PathBuf;
 use std::sync::Mutex;
 
 use llama_cpp::{standard_sampler::StandardSampler, LlamaModel, LlamaParams, SessionParams};
+use num_cpus;
 use once_cell::sync::OnceCell;
 use tauri::{Manager, Runtime};
 
@@ -19,13 +21,87 @@ fn default_model_path<R: Runtime>(app: &tauri::AppHandle<R>) -> PathBuf {
 
 static MODEL: OnceCell<Mutex<LlamaModel>> = OnceCell::new();
 
+fn default_gpu_layers() -> u32 {
+    if let Ok(val) = env::var("MINTAI_GPU_LAYERS") {
+        if let Ok(parsed) = val.parse::<u32>() {
+            return parsed;
+        }
+    }
+    #[cfg(feature = "gpu")]
+    {
+        return u32::MAX; // offload all layers when GPU build is enabled
+    }
+    #[cfg(not(feature = "gpu"))]
+    {
+        0
+    }
+}
+
+fn default_main_gpu() -> u32 {
+    if let Ok(val) = env::var("MINTAI_MAIN_GPU") {
+        if let Ok(parsed) = val.parse::<u32>() {
+            return parsed;
+        }
+    }
+    0
+}
+
+fn build_params_gpu() -> LlamaParams {
+    let mut params = LlamaParams::default();
+    params.n_gpu_layers = default_gpu_layers();
+    params.main_gpu = default_main_gpu();
+    params
+}
+
+fn build_params_cpu() -> LlamaParams {
+    let mut params = LlamaParams::default();
+    params.n_gpu_layers = 0;
+    params
+}
+
 fn get_model(path: &PathBuf) -> Result<&'static Mutex<LlamaModel>, String> {
     MODEL.get_or_try_init(|| {
-        let params = LlamaParams::default();
-        LlamaModel::load_from_file(path, params)
-            .map(Mutex::new)
-            .map_err(|e| e.to_string())
+        let params_gpu = build_params_gpu();
+        let attempt_gpu = cfg!(feature = "gpu") && params_gpu.n_gpu_layers > 0;
+
+        let gpu_result = if attempt_gpu {
+            Some(LlamaModel::load_from_file(path, params_gpu))
+        } else {
+            None
+        };
+
+        match gpu_result {
+            Some(Ok(model)) => Ok(Mutex::new(model)),
+            Some(Err(err)) => {
+                eprintln!("MintAI GPU load failed, falling back to CPU: {err}");
+                LlamaModel::load_from_file(path, build_params_cpu())
+                    .map(Mutex::new)
+                    .map_err(|e| format!("GPU failed: {err}; CPU failed: {e}"))
+            }
+            None => LlamaModel::load_from_file(path, build_params_cpu())
+                .map(Mutex::new)
+                .map_err(|e| e.to_string()),
+        }
     })
+}
+
+fn tuned_session_params() -> SessionParams {
+    let mut params = SessionParams::default();
+
+    let threads = num_cpus::get_physical()
+        .saturating_sub(1)
+        .max(1) as u32;
+
+    // Keep context modest for faster CPU inference while retaining enough room for prompts.
+    params.n_ctx = params.n_ctx.min(2048).max(512);
+    // Balance batch sizes for prompt ingestion throughput.
+    params.n_batch = params.n_batch.min(512).max(128);
+    params.n_ubatch = params.n_batch;
+
+    params.n_threads = threads;
+    params.n_threads_batch = threads;
+
+    params
 }
 
 #[derive(serde::Serialize)]
@@ -55,7 +131,7 @@ async fn llm_generate(
     let guard = model.lock().map_err(|e| e.to_string())?;
 
     let mut session = guard
-        .create_session(SessionParams::default())
+        .create_session(tuned_session_params())
         .map_err(|e| e.to_string())?;
 
     session.advance_context(prompt.as_bytes()).map_err(|e| e.to_string())?;
