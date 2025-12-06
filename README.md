@@ -23,6 +23,7 @@ MintBalance is a minimal, animation-rich desktop cockpit for tracking income, ex
 ## Keyboard & form QoL
 - In the Add transaction form, pressing Enter in a field focuses the next field (Source → Category → Amount → Date → Notes). From Notes, Enter triggers Save.
 - The Source field auto-focuses on open; expenses default to **Auto (MintAI)** when AI is enabled.
+- Delete actions now require confirmation in lists (Transactions, Subscriptions): first click shows confirm (check) and cancel (X); delete icon is red by default.
 
 ## Commands
 - `npm install` - install JS dependencies

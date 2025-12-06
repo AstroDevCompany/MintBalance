@@ -1,6 +1,10 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::path::PathBuf;
+use std::sync::Mutex;
+
+use llama_cpp::{standard_sampler::StandardSampler, LlamaModel, LlamaParams, SessionParams};
+use once_cell::sync::OnceCell;
 use tauri::{Manager, Runtime};
 
 fn default_model_path<R: Runtime>(app: &tauri::AppHandle<R>) -> PathBuf {
@@ -13,6 +17,17 @@ fn default_model_path<R: Runtime>(app: &tauri::AppHandle<R>) -> PathBuf {
     path
 }
 
+static MODEL: OnceCell<Mutex<LlamaModel>> = OnceCell::new();
+
+fn get_model(path: &PathBuf) -> Result<&'static Mutex<LlamaModel>, String> {
+    MODEL.get_or_try_init(|| {
+        let params = LlamaParams::default();
+        LlamaModel::load_from_file(path, params)
+            .map(Mutex::new)
+            .map_err(|e| e.to_string())
+    })
+}
+
 #[derive(serde::Serialize)]
 struct ModelStatus {
     path: String,
@@ -20,10 +35,15 @@ struct ModelStatus {
 }
 
 #[tauri::command]
-async fn llm_generate(app: tauri::AppHandle, prompt: String, model_path: Option<String>) -> Result<String, String> {
+async fn llm_generate(
+    app: tauri::AppHandle,
+    prompt: String,
+    model_path: Option<String>,
+) -> Result<String, String> {
     let model_path = model_path
         .map(PathBuf::from)
         .unwrap_or_else(|| default_model_path(&app));
+
     if !model_path.exists() {
         return Err(format!(
             "Local model not found at {}",
@@ -31,9 +51,33 @@ async fn llm_generate(app: tauri::AppHandle, prompt: String, model_path: Option<
         ));
     }
 
-    // Placeholder: integrate llama.cpp bindings here. For now, echo the prompt to keep the pipeline flowing.
-    // This keeps the app functional while allowing the UI to switch to local AI once the model is present.
-    Ok(format!("(Local model placeholder) {}", prompt))
+    let model = get_model(&model_path)?;
+    let guard = model.lock().map_err(|e| e.to_string())?;
+
+    let mut session = guard
+        .create_session(SessionParams::default())
+        .map_err(|e| e.to_string())?;
+
+    session.advance_context(prompt.as_bytes()).map_err(|e| e.to_string())?;
+
+    let mut completions = session
+        .start_completing_with(StandardSampler::default(), 256)
+        .map_err(|e| e.to_string())?
+        .into_strings();
+
+    let mut output = String::new();
+    for token in completions.by_ref().take(256) {
+        output.push_str(&token);
+        if output.len() > 8000 {
+            break;
+        }
+    }
+
+    if output.trim().is_empty() {
+        return Err("Local model returned empty output.".to_string());
+    }
+
+    Ok(output)
 }
 
 #[tauri::command]

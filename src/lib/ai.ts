@@ -9,41 +9,6 @@ import { invokeLocalLlm } from './localModel'
 
 type AiMode = 'cloud' | 'local'
 
-const techKeywords = [
-  'laptop',
-  'computer',
-  'pc',
-  'macbook',
-  'imac',
-  'ipad',
-  'iphone',
-  'android',
-  'phone',
-  'tablet',
-  'gpu',
-  'cpu',
-  'ssd',
-  'ram',
-  'graphics',
-  'nvidia',
-  'amd',
-  'intel',
-  'monitor',
-  'keyboard',
-  'mouse',
-  'headset',
-]
-
-const applyCategoryHeuristics = (source: string, chosen: string, categories: string[]) => {
-  const lowerSource = source.toLowerCase()
-  const hasTechKeyword = techKeywords.some((kw) => lowerSource.includes(kw))
-  if (hasTechKeyword) {
-    if (categories.includes('Tech')) return 'Tech'
-    if (categories.includes('Utilities')) return 'Utilities'
-  }
-  return chosen
-}
-
 export const categorizeExpenseAi = async ({
   mode,
   apiKey,
@@ -65,8 +30,9 @@ export const categorizeExpenseAi = async ({
 
   if (mode === 'local') {
     const prompt = `
-You categorize expenses using only these categories: ${categories.join(', ')}.
-Return a JSON object like {"category":"OneOfAbove"} with no extra text.
+You are an expense classifier. Choose the best matching category from this list ONLY: ${categories.join(', ')}.
+Return exactly one JSON object, no markdown: {"category":"OneOfTheListedCategories"}.
+Be precise: groceries/food -> Food; supplements/medicine -> Health; utilities/bills -> Utilities; tech/electronics -> Tech; housing/rent -> Housing; entertainment/coffee/restaurants -> Entertainment or Food.
 Expense:
 - Merchant: ${source}
 - Amount: ${amount} ${currency}
@@ -74,7 +40,7 @@ Expense:
 `
     const response = await invokeLocalLlm(prompt)
     const picked = extractCategory(response, categoryList)
-    return applyCategoryHeuristics(source, picked, categoryList)
+    return picked
   }
 
   const picked = await categorizeExpenseWithGemini({
@@ -85,7 +51,7 @@ Expense:
     source,
     notes,
   })
-  return applyCategoryHeuristics(source, picked, categoryList)
+  return picked
 }
 
 export const predictExpensesAi = async ({
