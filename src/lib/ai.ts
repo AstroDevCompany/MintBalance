@@ -103,6 +103,29 @@ export const predictExpensesAi = async ({
   transactions: Transaction[]
   subscriptions: Subscription[]
 }) => {
+  const fallbackPrediction = () => {
+    const expenses = transactions.filter((t) => t.type === 'expense')
+    const expenseTotal = expenses.reduce((acc, t) => acc + t.amount, 0)
+    const avgExpense =
+      expenses.length > 0 ? expenseTotal / Math.max(1, expenses.length) : 0
+    const subMonthly = subscriptions
+      .filter((s) => s.active)
+      .reduce((acc, s) => {
+        const freq = s.frequency
+        if (freq === 'weekly') return acc + s.amount * 4.345
+        if (freq === 'quarterly') return acc + s.amount / 3
+        if (freq === 'annual') return acc + s.amount / 12
+        return acc + s.amount
+      }, 0)
+    const totalEstimate = expenseTotal + subMonthly
+    const summary = [
+      `Estimated total for ${timeframe}: ${totalEstimate.toLocaleString(undefined, { style: 'currency', currency })}`,
+      `Recent avg expense: ${avgExpense.toLocaleString(undefined, { style: 'currency', currency })} (${expenses.length} items)`,
+      `Active subscriptions monthly: ${subMonthly.toLocaleString(undefined, { style: 'currency', currency })}`,
+    ].join('\n')
+    return { summary, totalEstimate }
+  }
+
   if (mode === 'local') {
     const prompt = `
 Summarize upcoming expenses for timeframe "${timeframe}" in ${currency}.
@@ -118,10 +141,26 @@ ${subscriptions
   .map((s) => `${s.name} | ${s.frequency} | ${s.amount} due ${s.nextPayment}`)
   .join('\n')}
 `
-    const text = await invokeLocalLlm(prompt)
-    const match = text.match(/Estimated total:\s*([\d.,]+)/i)
-    const totalEstimate = match ? Number(match[1].replace(/,/g, '')) : undefined
-    return { summary: text, totalEstimate }
+    try {
+      const text = await invokeLocalLlm(prompt)
+      const lowerText = text.toLowerCase()
+      const looksLikeEcho =
+        lowerText.includes('local model placeholder') ||
+        (lowerText.includes('summarize upcoming expenses') && lowerText.includes('estimated total')) ||
+        lowerText.trim() === prompt.trim().toLowerCase()
+      if (looksLikeEcho) {
+        return fallbackPrediction()
+      }
+
+      const match = text.match(/Estimated total:\s*([\d.,]+)/i)
+      const totalEstimate = match ? Number(match[1].replace(/,/g, '')) : undefined
+      if (totalEstimate === undefined) {
+        return { ...fallbackPrediction(), summary: text || fallbackPrediction().summary }
+      }
+      return { summary: text, totalEstimate }
+    } catch {
+      return fallbackPrediction()
+    }
   }
 
   return predictWithGemini({ apiKey, timeframe, currency, transactions, subscriptions })
