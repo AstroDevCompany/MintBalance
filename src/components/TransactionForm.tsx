@@ -32,8 +32,13 @@ export const TransactionForm = () => {
       : Boolean(geminiApiKey && geminiKeyValid)
 
   useEffect(() => {
-    if (type === 'expense' && category === autoCategoryValue && !aiEnabled) {
-      setCategory(categories.expense[0])
+    if (type === 'expense') {
+      if (!aiEnabled && category === autoCategoryValue) {
+        setCategory(categories.expense[0])
+      }
+      if (aiEnabled && category !== autoCategoryValue) {
+        setCategory(autoCategoryValue)
+      }
     }
   }, [aiEnabled, category, type])
 
@@ -94,7 +99,11 @@ export const TransactionForm = () => {
 
   const toggleType = (next: TransactionKind) => {
     setType(next)
-    setCategory(categories[next][0])
+    if (next === 'expense' && aiEnabled) {
+      setCategory(autoCategoryValue)
+    } else {
+      setCategory(categories[next][0])
+    }
   }
 
   return (
