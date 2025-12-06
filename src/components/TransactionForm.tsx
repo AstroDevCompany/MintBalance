@@ -8,7 +8,7 @@ import { categorizeExpenseAi } from '../lib/ai'
 
 const categories = {
   income: ['Salary', 'Bonus', 'Freelance', 'Investments', 'Other'],
-  expense: ['Housing', 'Food', 'Transport', 'Entertainment', 'Health', 'Utilities', 'Other'],
+  expense: ['Housing', 'Food', 'Transport', 'Entertainment', 'Health', 'Utilities', 'Tech', 'Other'],
 }
 
 const autoCategoryValue = '__auto__'

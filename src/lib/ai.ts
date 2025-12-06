@@ -9,6 +9,41 @@ import { invokeLocalLlm } from './localModel'
 
 type AiMode = 'cloud' | 'local'
 
+const techKeywords = [
+  'laptop',
+  'computer',
+  'pc',
+  'macbook',
+  'imac',
+  'ipad',
+  'iphone',
+  'android',
+  'phone',
+  'tablet',
+  'gpu',
+  'cpu',
+  'ssd',
+  'ram',
+  'graphics',
+  'nvidia',
+  'amd',
+  'intel',
+  'monitor',
+  'keyboard',
+  'mouse',
+  'headset',
+]
+
+const applyCategoryHeuristics = (source: string, chosen: string, categories: string[]) => {
+  const lowerSource = source.toLowerCase()
+  const hasTechKeyword = techKeywords.some((kw) => lowerSource.includes(kw))
+  if (hasTechKeyword) {
+    if (categories.includes('Tech')) return 'Tech'
+    if (categories.includes('Utilities')) return 'Utilities'
+  }
+  return chosen
+}
+
 export const categorizeExpenseAi = async ({
   mode,
   apiKey,
@@ -26,6 +61,8 @@ export const categorizeExpenseAi = async ({
   source: string
   notes?: string
 }) => {
+  const categoryList = categories
+
   if (mode === 'local') {
     const prompt = `
 You categorize expenses using only these categories: ${categories.join(', ')}.
@@ -36,17 +73,19 @@ Expense:
 - Notes: ${notes ?? 'None'}
 `
     const response = await invokeLocalLlm(prompt)
-    return extractCategory(response, categories)
+    const picked = extractCategory(response, categoryList)
+    return applyCategoryHeuristics(source, picked, categoryList)
   }
 
-  return categorizeExpenseWithGemini({
+  const picked = await categorizeExpenseWithGemini({
     apiKey,
     currency,
-    categories,
+    categories: categoryList,
     amount,
     source,
     notes,
   })
+  return applyCategoryHeuristics(source, picked, categoryList)
 }
 
 export const predictExpensesAi = async ({
