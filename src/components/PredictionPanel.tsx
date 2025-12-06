@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { Wand2 } from 'lucide-react'
-import { predictWithGemini } from '../lib/gemini'
+import { predictExpensesAi } from '../lib/ai'
 import { formatCurrency } from '../lib/finance'
 import { useFinanceStore } from '../store/useFinanceStore'
 
@@ -16,7 +16,8 @@ const presets = [
 export const PredictionPanel = () => {
   const transactions = useFinanceStore((s) => s.transactions)
   const subscriptions = useFinanceStore((s) => s.subscriptions)
-  const { geminiApiKey, geminiKeyValid, currency } = useFinanceStore((s) => s.settings)
+  const { geminiApiKey, geminiKeyValid, currency, aiMode = 'cloud', localModelReady } =
+    useFinanceStore((s) => s.settings)
   const [selected, setSelected] = useState<(typeof presets)[number]['id']>('90')
   const [customDays, setCustomDays] = useState(45)
   const [loading, setLoading] = useState(false)
@@ -31,21 +32,39 @@ export const PredictionPanel = () => {
   }, [customDays, selected])
 
   const handlePredict = async () => {
-    if (!geminiApiKey || !geminiKeyValid) {
-      setError('Add and validate a Gemini API key in Settings to use MintAI.')
+    const cloudNotReady = !geminiApiKey || !geminiKeyValid
+    const localNotReady = !localModelReady
+    if ((aiMode === 'cloud' && cloudNotReady) || (aiMode === 'local' && localNotReady)) {
+      setError(
+        aiMode === 'local'
+          ? 'Download and ready the local model in Settings to use MintAI.'
+          : 'Add and validate a Gemini API key in Settings to use MintAI.',
+      )
       return
     }
 
     setLoading(true)
     setError(null)
     try {
-      const prediction = await predictWithGemini({
-        apiKey: geminiApiKey,
-        timeframe,
-        currency,
-        transactions,
-        subscriptions,
-      })
+      const prediction = await predictExpensesAi(
+        aiMode === 'local'
+          ? {
+              mode: 'local',
+              apiKey: '',
+              timeframe,
+              currency,
+              transactions,
+              subscriptions,
+            }
+          : {
+              mode: 'cloud',
+              apiKey: geminiApiKey,
+              timeframe,
+              currency,
+              transactions,
+              subscriptions,
+            },
+      )
       setResult(prediction)
     } catch (err) {
       const message =
@@ -111,9 +130,12 @@ export const PredictionPanel = () => {
           {loading ? 'Thinking...' : 'Predict with MintAI'}
         </motion.button>
       </div>
-      {(!geminiApiKey || !geminiKeyValid) && (
+      {((aiMode === 'cloud' && (!geminiApiKey || !geminiKeyValid)) ||
+        (aiMode === 'local' && !localModelReady)) && (
         <p className="mt-3 text-sm text-amber-200">
-          Add and validate a MintAI API key in Settings to enable AI projections.
+          {aiMode === 'local'
+            ? 'Download the local model in Settings to enable offline AI projections.'
+            : 'Add and validate a MintAI API key in Settings to enable AI projections.'}
         </p>
       )}
       {error && <p className="mt-3 text-sm text-rose-200">{error}</p>}

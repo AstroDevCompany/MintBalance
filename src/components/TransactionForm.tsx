@@ -4,7 +4,7 @@ import { motion } from 'framer-motion'
 import { PlusCircle, Sparkles } from 'lucide-react'
 import { useFinanceStore } from '../store/useFinanceStore'
 import type { TransactionKind } from '../types'
-import { categorizeExpenseWithGemini } from '../lib/gemini'
+import { categorizeExpenseAi } from '../lib/ai'
 
 const categories = {
   income: ['Salary', 'Bonus', 'Freelance', 'Investments', 'Other'],
@@ -15,7 +15,8 @@ const autoCategoryValue = '__auto__'
 
 export const TransactionForm = () => {
   const addTransaction = useFinanceStore((s) => s.addTransaction)
-  const { currency, geminiApiKey, geminiKeyValid } = useFinanceStore((s) => s.settings)
+  const { currency, geminiApiKey, geminiKeyValid, aiMode = 'cloud', localModelReady } =
+    useFinanceStore((s) => s.settings)
   const [type, setType] = useState<TransactionKind>('income')
   const [source, setSource] = useState('')
   const [category, setCategory] = useState(categories.income[0])
@@ -25,7 +26,10 @@ export const TransactionForm = () => {
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const aiEnabled = Boolean(geminiApiKey && geminiKeyValid)
+  const aiEnabled =
+    aiMode === 'local'
+      ? Boolean(localModelReady)
+      : Boolean(geminiApiKey && geminiKeyValid)
 
   useEffect(() => {
     if (type === 'expense' && category === autoCategoryValue && !aiEnabled) {
@@ -53,9 +57,14 @@ export const TransactionForm = () => {
 
       if (type === 'expense' && category === autoCategoryValue) {
         if (!aiEnabled) {
-          throw new Error('MintAI is not enabled. Save a valid Gemini key in Settings first.')
+          throw new Error(
+            aiMode === 'local'
+              ? 'Local MintAI is not ready. Download the model first.'
+              : 'MintAI is not enabled. Save a valid Gemini key in Settings first.',
+          )
         }
-        finalCategory = await categorizeExpenseWithGemini({
+        finalCategory = await categorizeExpenseAi({
+          mode: aiMode,
           apiKey: geminiApiKey,
           amount: parsed,
           currency,

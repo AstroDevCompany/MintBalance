@@ -32,6 +32,11 @@ export interface AppSettings {
   geminiApiKey: string
   geminiKeyValid?: boolean
   geminiKeyLastChecked?: string
+  aiMode?: 'cloud' | 'local'
+  localModelPath?: string
+  localModelReady?: boolean
+  localModelLastChecked?: string
+  localModelPrompted?: boolean
   firstName: string
   createdAt?: string
   updatedAt?: string

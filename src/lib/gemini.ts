@@ -59,7 +59,7 @@ const formatSubscriptions = (subscriptions: Subscription[]) =>
     )
     .join('\n')
 
-const extractCategory = (text: string, categories: string[]) => {
+export const extractCategory = (text: string, categories: string[]) => {
   const normalizedOptions = categories.map((c) => c.toLowerCase())
   const jsonMatch = text.match(/\{[\s\S]*?\}/)
 
