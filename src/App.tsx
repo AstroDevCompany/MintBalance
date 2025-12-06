@@ -6,6 +6,7 @@ import { UpdateDialog } from './components/UpdateDialog'
 import { useDevtoolsGuard } from './hooks/useDevtoolsGuard'
 import { useUpdateCheck } from './hooks/useUpdateCheck'
 import { Dashboard } from './pages/Dashboard'
+import { SpendingInsights } from './pages/SpendingInsights'
 import { Settings } from './pages/Settings'
 import { Subscriptions } from './pages/Subscriptions'
 import { Transactions } from './pages/Transactions'
@@ -15,6 +16,7 @@ const pageLookup: Record<PageKey, JSX.Element> = {
   dashboard: <Dashboard />,
   transactions: <Transactions />,
   subscriptions: <Subscriptions />,
+  insights: <SpendingInsights />,
   settings: <Settings />,
 }
 

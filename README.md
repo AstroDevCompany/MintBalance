@@ -5,12 +5,18 @@ MintBalance is a minimal, animation-rich desktop cockpit for tracking income, ex
 ## Features
 - Add and review incomes/expenses with category and notes
 - Subscription tracker with renewal reminders and monthly burn calculator
-- MintAI (Gemini) powered expense predictions (optional API key in Settings)
+- MintAI (Gemini) powered expense predictions and expense auto-categorization (validated API key in Settings)
 - Dashboard with cashflow and category charts plus toggleable views
+- Spending Insights page with MintAI (Gemini) summaries across categories, merchants, anomalies, and forecasts
 - Persistent local storage for all data and settings
 - First-launch name prompt and one-click data wipe in Settings
 - Update checker: compares current version to a remote text file and surfaces a download CTA on launch and in Settings
 - Account login/signup with cloud sync against auth.mintflow.dev (push/pull ledger + settings)
+
+## MintAI setup
+1) Go to Settings -> MintAI, paste your Gemini API key, and click **Save API key** to validate it. The status pill will show **Ready** when MintAI is enabled.
+2) In the Transactions page, choose **Expense** and pick the **Auto (MintAI)** category to let Gemini auto-categorize the expense before it is saved. The selected category will be applied to the saved record.
+3) Open the **Spending Insights** page, choose a lookback window, and click **Generate with MintAI** to get high-signal spending insights (categories, merchants, anomalies, forecasts).
 
 ## Commands
 - `npm install` - install JS dependencies

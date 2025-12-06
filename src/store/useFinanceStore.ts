@@ -22,6 +22,7 @@ type FinanceActions = {
 const defaultSettings: AppSettings = {
   currency: 'USD',
   geminiApiKey: '',
+  geminiKeyValid: false,
   firstName: '',
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),

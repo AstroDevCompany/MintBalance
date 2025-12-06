@@ -30,6 +30,8 @@ export interface Subscription {
 export interface AppSettings {
   currency: string
   geminiApiKey: string
+  geminiKeyValid?: boolean
+  geminiKeyLastChecked?: string
   firstName: string
   createdAt?: string
   updatedAt?: string

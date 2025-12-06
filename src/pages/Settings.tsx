@@ -5,14 +5,19 @@ import { open } from '@tauri-apps/api/shell'
 import { useFinanceStore } from '../store/useFinanceStore'
 import { useUpdateCheck } from '../hooks/useUpdateCheck'
 import { AuthPanel } from '../components/AuthPanel'
+import { validateGeminiKey } from '../lib/gemini'
 
 const currencies = ['USD', 'EUR', 'GBP', 'CHF', 'CAD', 'AUD']
 
 export const Settings = () => {
-  const { currency, geminiApiKey, firstName } = useFinanceStore((s) => s.settings)
+  const { currency, geminiApiKey, geminiKeyValid, firstName } = useFinanceStore((s) => s.settings)
   const updateSettings = useFinanceStore((s) => s.updateSettings)
   const clearAll = useFinanceStore((s) => s.clearAll)
   const [apiKey, setApiKey] = useState(geminiApiKey)
+  const [apiStatus, setApiStatus] = useState<'idle' | 'checking' | 'valid' | 'error'>(
+    geminiApiKey && geminiKeyValid ? 'valid' : 'idle',
+  )
+  const [apiMessage, setApiMessage] = useState<string | null>(null)
   const appVersion = import.meta.env.VITE_APP_VERSION ?? '1.0.0'
   const { available, latestVersion } = useUpdateCheck(appVersion)
 
@@ -26,7 +31,41 @@ export const Settings = () => {
     }
   }
 
-  const handleApiSave = () => updateSettings({ geminiApiKey: apiKey.trim() })
+  const handleApiSave = async () => {
+    const trimmed = apiKey.trim()
+    if (!trimmed) {
+      updateSettings({
+        geminiApiKey: '',
+        geminiKeyValid: false,
+        geminiKeyLastChecked: new Date().toISOString(),
+      })
+      setApiStatus('idle')
+      setApiMessage(null)
+      return
+    }
+
+    setApiStatus('checking')
+    setApiMessage(null)
+    try {
+      await validateGeminiKey(trimmed)
+      updateSettings({
+        geminiApiKey: trimmed,
+        geminiKeyValid: true,
+        geminiKeyLastChecked: new Date().toISOString(),
+      })
+      setApiStatus('valid')
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'Unable to verify your Gemini API key.'
+      updateSettings({
+        geminiApiKey: trimmed,
+        geminiKeyValid: false,
+        geminiKeyLastChecked: new Date().toISOString(),
+      })
+      setApiStatus('error')
+      setApiMessage(message)
+    }
+  }
 
   return (
     <div className="space-y-6">
@@ -93,14 +132,39 @@ export const Settings = () => {
         </div>
 
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 shadow-xl space-y-3">
-          <div className="flex items-center gap-2 text-sm font-semibold text-white">
-            <Sparkles size={16} /> MintAI
+          <div className="flex items-center justify-between gap-2 text-sm font-semibold text-white">
+            <span className="inline-flex items-center gap-2">
+              <Sparkles size={16} /> MintAI
+            </span>
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                apiStatus === 'valid'
+                  ? 'bg-emerald-400/20 text-emerald-200'
+                  : apiStatus === 'error'
+                    ? 'bg-rose-400/20 text-rose-100'
+                    : apiStatus === 'checking'
+                      ? 'bg-cyan-400/20 text-cyan-100'
+                      : 'bg-white/10 text-slate-200'
+              }`}
+            >
+              {apiStatus === 'valid'
+                ? 'Ready'
+                : apiStatus === 'checking'
+                  ? 'Validating...'
+                  : apiStatus === 'error'
+                    ? 'Invalid key'
+                    : 'Not validated'}
+            </span>
           </div>
           <label className="text-sm text-slate-200">
             Gemini API key
             <input
               value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
+              onChange={(e) => {
+                setApiKey(e.target.value)
+                setApiStatus('idle')
+                setApiMessage(null)
+              }}
               placeholder="Paste your Gemini API key"
               className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white outline-none transition focus:border-teal-300 focus:bg-white/10"
             />
@@ -109,16 +173,23 @@ export const Settings = () => {
             <motion.button
               whileTap={{ scale: 0.98 }}
               onClick={handleApiSave}
-              className="rounded-xl bg-gradient-to-r from-teal-400 via-cyan-400 to-emerald-400 px-4 py-2 text-sm font-semibold text-slate-900 shadow-glow transition hover:brightness-105"
+              disabled={apiStatus === 'checking'}
+              className="rounded-xl bg-gradient-to-r from-teal-400 via-cyan-400 to-emerald-400 px-4 py-2 text-sm font-semibold text-slate-900 shadow-glow transition hover:brightness-105 disabled:opacity-60"
             >
-              Save API key
+              {apiStatus === 'checking' ? 'Validating...' : 'Save API key'}
             </motion.button>
           </div>
           <p className="text-xs text-slate-400">
-            Optional. Used to forecast expenses from your ledger and subscriptions.
+            Optional. Used to forecast expenses and auto-categorize new expenses via MintAI.
           </p>
+          {apiMessage && <p className="text-sm text-rose-200">{apiMessage}</p>}
+          {apiStatus === 'valid' && (
+            <p className="text-xs text-emerald-200">MintAI is enabled for expense auto-categorization.</p>
+          )}
         </div>
       </div>
+
+      <AuthPanel />
 
       <div className="rounded-2xl border border-white/10 bg-white/5 p-4 shadow-xl">
         <div className="flex items-center justify-between">
@@ -138,8 +209,6 @@ export const Settings = () => {
           </motion.button>
         </div>
       </div>
-
-      <AuthPanel />
     </div>
   )
 }

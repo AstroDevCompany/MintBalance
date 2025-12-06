@@ -16,7 +16,7 @@ const presets = [
 export const PredictionPanel = () => {
   const transactions = useFinanceStore((s) => s.transactions)
   const subscriptions = useFinanceStore((s) => s.subscriptions)
-  const { geminiApiKey, currency } = useFinanceStore((s) => s.settings)
+  const { geminiApiKey, geminiKeyValid, currency } = useFinanceStore((s) => s.settings)
   const [selected, setSelected] = useState<(typeof presets)[number]['id']>('90')
   const [customDays, setCustomDays] = useState(45)
   const [loading, setLoading] = useState(false)
@@ -31,6 +31,11 @@ export const PredictionPanel = () => {
   }, [customDays, selected])
 
   const handlePredict = async () => {
+    if (!geminiApiKey || !geminiKeyValid) {
+      setError('Add and validate a Gemini API key in Settings to use MintAI.')
+      return
+    }
+
     setLoading(true)
     setError(null)
     try {
@@ -106,9 +111,9 @@ export const PredictionPanel = () => {
           {loading ? 'Thinking...' : 'Predict with MintAI'}
         </motion.button>
       </div>
-      {!geminiApiKey && (
+      {(!geminiApiKey || !geminiKeyValid) && (
         <p className="mt-3 text-sm text-amber-200">
-          Add a MintAI API key in Settings to enable AI projections.
+          Add and validate a MintAI API key in Settings to enable AI projections.
         </p>
       )}
       {error && <p className="mt-3 text-sm text-rose-200">{error}</p>}

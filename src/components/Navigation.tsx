@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion'
-import { LayoutDashboard, Repeat, Settings, Wallet } from 'lucide-react'
+import { LayoutDashboard, Repeat, Settings, Sparkles, Wallet } from 'lucide-react'
 import type { JSX } from 'react'
 import type { PageKey } from '../pages/types'
 
@@ -7,6 +7,7 @@ const tabs: { id: PageKey; label: string; icon: JSX.Element }[] = [
   { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
   { id: 'transactions', label: 'Transactions', icon: <Wallet size={18} /> },
   { id: 'subscriptions', label: 'Subscriptions', icon: <Repeat size={18} /> },
+  { id: 'insights', label: 'Insights', icon: <Sparkles size={18} /> },
   { id: 'settings', label: 'Settings', icon: <Settings size={18} /> },
 ]
 
