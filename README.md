@@ -20,6 +20,10 @@ MintBalance is a minimal, animation-rich desktop cockpit for tracking income, ex
 2) In the Transactions page, choose **Expense** and pick **Auto (MintAI)** to auto-categorize the expense with the selected AI mode.
 3) Open the **Spending Insights** page, choose a lookback window, and click **Generate with MintAI** (uses the selected AI mode) to get high-signal spending insights (categories, merchants, anomalies, forecasts).
 
+## Keyboard & form QoL
+- In the Add transaction form, pressing Enter in a field focuses the next field (Source → Category → Amount → Date → Notes). From Notes, Enter triggers Save.
+- The Source field auto-focuses on open; expenses default to **Auto (MintAI)** when AI is enabled.
+
 ## Commands
 - `npm install` - install JS dependencies
 - `npm run dev` - Vite dev server (web preview)

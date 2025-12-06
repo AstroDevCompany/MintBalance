@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import type { FormEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { FormEvent, KeyboardEvent } from 'react'
 import { motion } from 'framer-motion'
 import { PlusCircle, Sparkles } from 'lucide-react'
 import { useFinanceStore } from '../store/useFinanceStore'
@@ -25,6 +25,12 @@ export const TransactionForm = () => {
   const [notes, setNotes] = useState('')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const sourceRef = useRef<HTMLInputElement | null>(null)
+  const categoryRef = useRef<HTMLSelectElement | null>(null)
+  const amountRef = useRef<HTMLInputElement | null>(null)
+  const dateRef = useRef<HTMLInputElement | null>(null)
+  const notesRef = useRef<HTMLTextAreaElement | null>(null)
+  const submitRef = useRef<HTMLButtonElement | null>(null)
 
   const aiEnabled =
     aiMode === 'local'
@@ -32,6 +38,7 @@ export const TransactionForm = () => {
       : Boolean(geminiApiKey && geminiKeyValid)
 
   useEffect(() => {
+    sourceRef.current?.focus()
     if (type === 'expense') {
       if (!aiEnabled && category === autoCategoryValue) {
         setCategory(categories.expense[0])
@@ -41,6 +48,21 @@ export const TransactionForm = () => {
       }
     }
   }, [aiEnabled, category, type])
+
+  const handleEnterFocus = (
+    e: KeyboardEvent<HTMLElement>,
+    next?: HTMLElement | null,
+    allowShiftSubmit = false,
+  ) => {
+    if (e.key !== 'Enter') return
+    if (e.shiftKey && allowShiftSubmit) return
+    e.preventDefault()
+    if (next) {
+      next.focus()
+    } else {
+      submitRef.current?.click()
+    }
+  }
 
   const reset = () => {
     setSource('')
@@ -139,6 +161,8 @@ export const TransactionForm = () => {
           <input
             value={source}
             onChange={(e) => setSource(e.target.value)}
+            onKeyDown={(e) => handleEnterFocus(e, categoryRef.current)}
+            ref={sourceRef}
             placeholder="Company, client, vendor..."
             className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white outline-none transition focus:border-teal-300 focus:bg-white/10"
             required
@@ -149,6 +173,8 @@ export const TransactionForm = () => {
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
+            onKeyDown={(e) => handleEnterFocus(e, amountRef.current)}
+            ref={categoryRef}
             className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white outline-none transition focus:border-teal-300 focus:bg-white/10"
           >
             {categories[type].map((cat) => (
@@ -174,6 +200,8 @@ export const TransactionForm = () => {
             inputMode="decimal"
             step="0.01"
             onChange={(e) => setAmount(e.target.value)}
+            onKeyDown={(e) => handleEnterFocus(e, dateRef.current)}
+            ref={amountRef}
             placeholder="0.00"
             className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white outline-none transition focus:border-teal-300 focus:bg-white/10"
             required
@@ -185,6 +213,8 @@ export const TransactionForm = () => {
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
+            onKeyDown={(e) => handleEnterFocus(e, notesRef.current)}
+            ref={dateRef}
             className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white outline-none transition focus:border-teal-300 focus:bg-white/10"
             required
           />
@@ -195,6 +225,8 @@ export const TransactionForm = () => {
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
+          onKeyDown={(e) => handleEnterFocus(e as any, submitRef.current, true)}
+          ref={notesRef}
           rows={2}
           placeholder="Optional context, tags, ids..."
           className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white outline-none transition focus:border-teal-300 focus:bg-white/10"
@@ -205,6 +237,7 @@ export const TransactionForm = () => {
           whileTap={{ scale: 0.98 }}
           type="submit"
           disabled={saving}
+          ref={submitRef}
           className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-teal-400 via-cyan-400 to-emerald-400 px-4 py-2 text-sm font-semibold text-slate-900 shadow-glow transition hover:brightness-105 disabled:opacity-60"
         >
           <PlusCircle size={16} />
