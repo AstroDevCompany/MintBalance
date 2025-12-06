@@ -30,6 +30,13 @@ export interface Subscription {
 export interface AppSettings {
   currency: string
   geminiApiKey: string
+  geminiKeyValid?: boolean
+  geminiKeyLastChecked?: string
+  aiMode?: 'cloud' | 'local'
+  localModelPath?: string
+  localModelReady?: boolean
+  localModelLastChecked?: string
+  localModelPrompted?: boolean
   firstName: string
   createdAt?: string
   updatedAt?: string

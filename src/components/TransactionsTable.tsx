@@ -1,5 +1,7 @@
-import { Trash2 } from 'lucide-react'
+import { Check, Trash2, X } from 'lucide-react'
+import { AnimatePresence, motion } from 'framer-motion'
 import { format } from 'date-fns'
+import { useState } from 'react'
 import { useFinanceStore } from '../store/useFinanceStore'
 import { formatCurrency } from '../lib/finance'
 
@@ -8,6 +10,7 @@ type Props = {
 }
 
 export const TransactionsTable = ({ currency }: Props) => {
+  const [pendingDelete, setPendingDelete] = useState<string | null>(null)
   const transactions = useFinanceStore((s) => s.transactions)
   const removeTransaction = useFinanceStore((s) => s.removeTransaction)
 
@@ -67,13 +70,49 @@ export const TransactionsTable = ({ currency }: Props) => {
               {formatCurrency(tx.amount, currency)}
             </div>
             <div className="col-span-1 flex justify-end">
-              <button
-                onClick={() => removeTransaction(tx.id)}
-                className="rounded-lg p-2 text-slate-400 transition hover:bg-white/10 hover:text-white"
-                aria-label="Delete transaction"
-              >
-                <Trash2 size={16} />
-              </button>
+              <AnimatePresence mode="wait" initial={false}>
+                {pendingDelete === tx.id ? (
+                  <motion.div
+                    key="confirm"
+                    initial={{ opacity: 0, y: 8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: 8 }}
+                    transition={{ duration: 0.15 }}
+                    className="flex gap-2"
+                  >
+                    <button
+                      onClick={() => {
+                        removeTransaction(tx.id)
+                        setPendingDelete(null)
+                      }}
+                      className="rounded-lg p-2 text-emerald-200 transition hover:bg-white/10 hover:text-emerald-100"
+                      aria-label="Confirm delete transaction"
+                    >
+                      <Check size={16} />
+                    </button>
+                    <button
+                      onClick={() => setPendingDelete(null)}
+                      className="rounded-lg p-2 text-slate-300 transition hover:bg-white/10 hover:text-white"
+                      aria-label="Cancel delete transaction"
+                    >
+                      <X size={16} />
+                    </button>
+                  </motion.div>
+                ) : (
+                  <motion.button
+                    key="trash"
+                    initial={{ opacity: 0, y: -6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0, y: -6 }}
+                    transition={{ duration: 0.15 }}
+                    onClick={() => setPendingDelete(tx.id)}
+                    className="rounded-lg p-2 text-rose-300 transition hover:bg-white/10 hover:text-rose-200"
+                    aria-label="Delete transaction"
+                  >
+                    <Trash2 size={16} />
+                  </motion.button>
+                )}
+              </AnimatePresence>
             </div>
           </div>
         ))}

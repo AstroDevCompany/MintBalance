@@ -14,9 +14,9 @@
     "windows": [
       {
         "title": "MintBalance",
-        "width": 1080,
-        "height": 720,
-        "minWidth": 600,
+        "width": 1280,
+        "height": 800,
+        "minWidth": 800,
         "minHeight": 400,
         "resizable": true
       }

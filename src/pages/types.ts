@@ -1,1 +1,1 @@
-export type PageKey = 'dashboard' | 'transactions' | 'subscriptions' | 'settings'
+export type PageKey = 'dashboard' | 'transactions' | 'subscriptions' | 'insights' | 'settings'

@@ -1,23 +1,68 @@
-import { useState } from 'react'
-import type { FormEvent } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import type { FormEvent, KeyboardEvent } from 'react'
 import { motion } from 'framer-motion'
-import { PlusCircle } from 'lucide-react'
+import { PlusCircle, Sparkles } from 'lucide-react'
 import { useFinanceStore } from '../store/useFinanceStore'
 import type { TransactionKind } from '../types'
+import { categorizeExpenseAi } from '../lib/ai'
 
 const categories = {
   income: ['Salary', 'Bonus', 'Freelance', 'Investments', 'Other'],
-  expense: ['Housing', 'Food', 'Transport', 'Entertainment', 'Health', 'Utilities', 'Other'],
+  expense: ['Housing', 'Food', 'Transport', 'Entertainment', 'Health', 'Utilities', 'Tech', 'Other'],
 }
+
+const autoCategoryValue = '__auto__'
 
 export const TransactionForm = () => {
   const addTransaction = useFinanceStore((s) => s.addTransaction)
+  const { currency, geminiApiKey, geminiKeyValid, aiMode = 'cloud', localModelReady } =
+    useFinanceStore((s) => s.settings)
   const [type, setType] = useState<TransactionKind>('income')
   const [source, setSource] = useState('')
   const [category, setCategory] = useState(categories.income[0])
   const [amount, setAmount] = useState('')
   const [date, setDate] = useState(() => new Date().toISOString().slice(0, 10))
   const [notes, setNotes] = useState('')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const sourceRef = useRef<HTMLInputElement | null>(null)
+  const categoryRef = useRef<HTMLSelectElement | null>(null)
+  const amountRef = useRef<HTMLInputElement | null>(null)
+  const dateRef = useRef<HTMLInputElement | null>(null)
+  const notesRef = useRef<HTMLTextAreaElement | null>(null)
+  const submitRef = useRef<HTMLButtonElement | null>(null)
+
+  const aiEnabled =
+    aiMode === 'local'
+      ? Boolean(localModelReady)
+      : Boolean(geminiApiKey && geminiKeyValid)
+
+  useEffect(() => {
+    sourceRef.current?.focus()
+    if (type === 'expense') {
+      if (!aiEnabled && category === autoCategoryValue) {
+        setCategory(categories.expense[0])
+      }
+      if (aiEnabled && category !== autoCategoryValue) {
+        setCategory(autoCategoryValue)
+      }
+    }
+  }, [aiEnabled, category, type])
+
+  const handleEnterFocus = (
+    e: KeyboardEvent<HTMLElement>,
+    next?: HTMLElement | null,
+    allowShiftSubmit = false,
+  ) => {
+    if (e.key !== 'Enter') return
+    if (e.shiftKey && allowShiftSubmit) return
+    e.preventDefault()
+    if (next) {
+      next.focus()
+    } else {
+      submitRef.current?.click()
+    }
+  }
 
   const reset = () => {
     setSource('')
@@ -26,25 +71,61 @@ export const TransactionForm = () => {
     setDate(new Date().toISOString().slice(0, 10))
   }
 
-  const onSubmit = (e: FormEvent) => {
+  const onSubmit = async (e: FormEvent) => {
     e.preventDefault()
+    setError(null)
     const parsed = Number(amount)
     if (!source.trim() || Number.isNaN(parsed) || parsed <= 0) return
 
-    addTransaction({
-      amount: parsed,
-      category,
-      date,
-      notes,
-      source: source.trim(),
-      type,
-    })
-    reset()
+    setSaving(true)
+    try {
+      let finalCategory = category
+      const trimmedSource = source.trim()
+
+      if (type === 'expense' && category === autoCategoryValue) {
+        if (!aiEnabled) {
+          throw new Error(
+            aiMode === 'local'
+              ? 'Local MintAI is not ready. Download the model first.'
+              : 'MintAI is not enabled. Save a valid Gemini key in Settings first.',
+          )
+        }
+        finalCategory = await categorizeExpenseAi({
+          mode: aiMode,
+          apiKey: geminiApiKey,
+          amount: parsed,
+          currency,
+          source: trimmedSource,
+          notes,
+          categories: categories.expense,
+        })
+      }
+
+      addTransaction({
+        amount: parsed,
+        category: finalCategory,
+        date,
+        notes,
+        source: trimmedSource,
+        type,
+      })
+      reset()
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : 'MintAI could not categorize that expense.'
+      setError(message)
+    } finally {
+      setSaving(false)
+    }
   }
 
   const toggleType = (next: TransactionKind) => {
     setType(next)
-    setCategory(categories[next][0])
+    if (next === 'expense' && aiEnabled) {
+      setCategory(autoCategoryValue)
+    } else {
+      setCategory(categories[next][0])
+    }
   }
 
   return (
@@ -80,6 +161,8 @@ export const TransactionForm = () => {
           <input
             value={source}
             onChange={(e) => setSource(e.target.value)}
+            onKeyDown={(e) => handleEnterFocus(e, categoryRef.current)}
+            ref={sourceRef}
             placeholder="Company, client, vendor..."
             className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white outline-none transition focus:border-teal-300 focus:bg-white/10"
             required
@@ -90,12 +173,24 @@ export const TransactionForm = () => {
           <select
             value={category}
             onChange={(e) => setCategory(e.target.value)}
+            onKeyDown={(e) => handleEnterFocus(e, amountRef.current)}
+            ref={categoryRef}
             className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white outline-none transition focus:border-teal-300 focus:bg-white/10"
           >
             {categories[type].map((cat) => (
-              <option key={cat}>{cat}</option>
+              <option key={cat} value={cat}>
+                {cat}
+              </option>
             ))}
+            {type === 'expense' && aiEnabled && (
+              <option value={autoCategoryValue}>Auto (MintAI)</option>
+            )}
           </select>
+          {type === 'expense' && aiEnabled && (
+            <p className="flex items-center gap-2 text-xs text-emerald-200">
+              <Sparkles size={14} /> MintAI will auto-categorize when you pick Auto.
+            </p>
+          )}
         </label>
         <label className="flex flex-col gap-2 text-sm text-slate-200">
           Amount
@@ -105,6 +200,8 @@ export const TransactionForm = () => {
             inputMode="decimal"
             step="0.01"
             onChange={(e) => setAmount(e.target.value)}
+            onKeyDown={(e) => handleEnterFocus(e, dateRef.current)}
+            ref={amountRef}
             placeholder="0.00"
             className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white outline-none transition focus:border-teal-300 focus:bg-white/10"
             required
@@ -116,6 +213,8 @@ export const TransactionForm = () => {
             type="date"
             value={date}
             onChange={(e) => setDate(e.target.value)}
+            onKeyDown={(e) => handleEnterFocus(e, notesRef.current)}
+            ref={dateRef}
             className="rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white outline-none transition focus:border-teal-300 focus:bg-white/10"
             required
           />
@@ -126,6 +225,8 @@ export const TransactionForm = () => {
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
+          onKeyDown={(e) => handleEnterFocus(e as any, submitRef.current, true)}
+          ref={notesRef}
           rows={2}
           placeholder="Optional context, tags, ids..."
           className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white outline-none transition focus:border-teal-300 focus:bg-white/10"
@@ -135,12 +236,15 @@ export const TransactionForm = () => {
         <motion.button
           whileTap={{ scale: 0.98 }}
           type="submit"
-          className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-teal-400 via-cyan-400 to-emerald-400 px-4 py-2 text-sm font-semibold text-slate-900 shadow-glow transition hover:brightness-105"
+          disabled={saving}
+          ref={submitRef}
+          className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-teal-400 via-cyan-400 to-emerald-400 px-4 py-2 text-sm font-semibold text-slate-900 shadow-glow transition hover:brightness-105 disabled:opacity-60"
         >
           <PlusCircle size={16} />
-          Save {type}
+          {saving ? 'Saving...' : `Save ${type}`}
         </motion.button>
       </div>
+      {error && <p className="mt-2 text-sm text-rose-200">{error}</p>}
     </form>
   )
 }
