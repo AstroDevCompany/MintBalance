@@ -127,6 +127,60 @@ ${subscriptions
   return predictWithGemini({ apiKey, timeframe, currency, transactions, subscriptions })
 }
 
+const fallbackInsights = (
+  transactions: Transaction[],
+  subscriptions: Subscription[],
+  currency: string,
+  max = 6,
+): string[] => {
+  const expenses = transactions.filter((t) => t.type === 'expense')
+  const total = expenses.reduce((acc, t) => acc + t.amount, 0)
+  const byCategory: Record<string, number> = {}
+  const byMerchant: Record<string, number> = {}
+  let biggest = { source: '', amount: 0, category: '' }
+
+  expenses.forEach((t) => {
+    byCategory[t.category] = (byCategory[t.category] ?? 0) + t.amount
+    byMerchant[t.source] = (byMerchant[t.source] ?? 0) + 1
+    if (t.amount > biggest.amount) biggest = { source: t.source, amount: t.amount, category: t.category }
+  })
+
+  const topCategory = Object.entries(byCategory).sort((a, b) => b[1] - a[1])[0]
+  const topMerchant = Object.entries(byMerchant).sort((a, b) => b[1] - a[1])[0]
+
+  const insights: string[] = []
+  insights.push(
+    `Total expenses: ${total.toLocaleString(undefined, { style: 'currency', currency })}`,
+  )
+  if (topCategory) {
+    insights.push(
+      `Top category: ${topCategory[0]} (${topCategory[1].toLocaleString(undefined, { style: 'currency', currency })})`,
+    )
+  }
+  if (topMerchant) {
+    insights.push(
+      `Most visited merchant: ${topMerchant[0]} (${topMerchant[1]} time${topMerchant[1] === 1 ? '' : 's'})`,
+    )
+  }
+  if (biggest.amount > 0) {
+    insights.push(
+      `Largest expense: ${biggest.source} (${biggest.category}) at ${biggest.amount.toLocaleString(undefined, { style: 'currency', currency })}`,
+    )
+  }
+  if (subscriptions.length) {
+    const activeSubs = subscriptions.filter((s) => s.active).length
+    insights.push(`Active subscriptions: ${activeSubs} (of ${subscriptions.length})`)
+  }
+  if (expenses.length >= 3) {
+    const avg = total / expenses.length
+    insights.push(
+      `Avg expense size: ${avg.toLocaleString(undefined, { style: 'currency', currency })}`,
+    )
+  }
+
+  return insights.slice(0, max)
+}
+
 export const generateSpendingInsightsAi = async ({
   mode,
   apiKey,
@@ -146,6 +200,8 @@ export const generateSpendingInsightsAi = async ({
   firstName?: string
   maxInsights?: number
 }) => {
+  const fallback = () => fallbackInsights(transactions, subscriptions, currency, maxInsights)
+
   if (mode === 'local') {
     const prompt = `Generate up to ${maxInsights} concise spending insights (140 chars max each) for ${
       firstName || 'the user'
@@ -162,12 +218,34 @@ ${subscriptions
   .map((s) => `${s.name} | ${s.frequency} | ${s.amount} | next ${s.nextPayment}`)
   .join('\n')}
 `
-    const text = await invokeLocalLlm(prompt)
-    return text
-      .split(/\r?\n/)
-      .map((line) => line.replace(/^[\-\u2022•\d.]+\s*/, '').trim())
-      .filter(Boolean)
-      .slice(0, maxInsights)
+    try {
+      const text = await invokeLocalLlm(prompt)
+      const lowerText = text.toLowerCase()
+      if (
+        lowerText.includes('local model placeholder') ||
+        lowerText.includes('generate up to') // prompt echo
+      ) {
+        return fallback()
+      }
+
+      const cleaned = text
+        .split(/\r?\n/)
+        .map((line) => line.replace(/^[\-\u2022•ƒ?›\d.]+\s*/, '').trim())
+        .filter(Boolean)
+
+      const looksLikePromptEcho =
+        cleaned.length === 1 &&
+        cleaned[0].toLowerCase().includes('generate up to') &&
+        cleaned[0].toLowerCase().includes('insights')
+
+      if (looksLikePromptEcho || !cleaned.length) {
+        return fallback()
+      }
+
+      return cleaned.slice(0, maxInsights)
+    } catch {
+      return fallback()
+    }
   }
 
   return generateSpendingInsights({
