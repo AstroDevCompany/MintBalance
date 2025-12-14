@@ -3,7 +3,6 @@ import type { JSX } from 'react'
 import { FirstLaunchDialog } from './components/FirstLaunchDialog'
 import { Navigation } from './components/Navigation'
 import { UpdateDialog } from './components/UpdateDialog'
-import { LocalModelDialog } from './components/LocalModelDialog'
 import { useDevtoolsGuard } from './hooks/useDevtoolsGuard'
 import { useUpdateCheck } from './hooks/useUpdateCheck'
 import { Dashboard } from './pages/Dashboard'
@@ -13,7 +12,8 @@ import { Subscriptions } from './pages/Subscriptions'
 import { Transactions } from './pages/Transactions'
 import type { PageKey } from './pages/types'
 import { useFinanceStore } from './store/useFinanceStore'
-import { getModelStatus, isTauriEnv } from './lib/localModel'
+import { fetchMintAiKey } from './lib/mintai'
+import { validateStoredLicense } from './lib/premium'
 
 const pageLookup: Record<PageKey, JSX.Element> = {
   dashboard: <Dashboard />,
@@ -30,38 +30,69 @@ const App = () => {
   const year = new Date().getFullYear()
   const version = import.meta.env.VITE_APP_VERSION ?? '1.0.0'
   const [dismissedUpdate, setDismissedUpdate] = useState(false)
-  const [showLocalDialog, setShowLocalDialog] = useState(false)
   const { available, latestVersion } = useUpdateCheck(version)
   const showUpdateDialog = available && !dismissedUpdate
   useDevtoolsGuard()
 
   useEffect(() => {
-    if (!isTauriEnv()) return
+    let cancelled = false
     ;(async () => {
-      const { exists, path } = await getModelStatus()
+      if (!settings.premiumToken) {
+        updateSettings({
+          premiumEnabled: false,
+          premiumLastChecked: new Date().toISOString(),
+          premiumError: 'Premium is not unlocked.',
+        })
+        return
+      }
+      const valid = await validateStoredLicense(settings.premiumToken)
+      if (cancelled) return
       updateSettings({
-        localModelPath: path,
-        localModelReady: exists,
-        localModelLastChecked: new Date().toISOString(),
+        premiumEnabled: valid,
+        premiumLastChecked: new Date().toISOString(),
+        premiumError: valid ? null : 'Premium validation failed.',
       })
-      if (!exists && !settings.localModelPrompted) {
-        // Retry once after a short delay to avoid false negatives during startup
-        setTimeout(async () => {
-          const retry = await getModelStatus()
-          updateSettings({
-            localModelPath: retry.path,
-            localModelReady: retry.exists,
-            localModelLastChecked: new Date().toISOString(),
-          })
-          if (!retry.exists && !settings.localModelPrompted) {
-            setShowLocalDialog(true)
-            updateSettings({ localModelPrompted: true })
-          }
-        }, 400)
+    })()
+    return () => {
+      cancelled = true
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.premiumToken])
+
+  useEffect(() => {
+    let cancelled = false
+    ;(async () => {
+      if (!settings.premiumEnabled) {
+        updateSettings({
+          mintAiReady: false,
+          mintAiError: 'MintAI requires Premium.',
+          mintAiLastLoaded: new Date().toISOString(),
+        })
+        return
+      }
+      try {
+        await fetchMintAiKey()
+        if (cancelled) return
+        updateSettings({
+          mintAiReady: true,
+          mintAiLastLoaded: new Date().toISOString(),
+          mintAiError: null,
+        })
+      } catch (err) {
+        if (cancelled) return
+        const message =
+          err instanceof Error ? err.message : 'MintAI key could not be loaded.'
+        updateSettings({
+          mintAiReady: false,
+          mintAiLastLoaded: new Date().toISOString(),
+          mintAiError: message,
+        })
       }
     })()
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+    return () => {
+      cancelled = true
+    }
+  }, [settings.premiumEnabled, updateSettings])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-950 via-slate-900 to-black text-slate-100">
@@ -79,14 +110,6 @@ const App = () => {
         currentVersion={version}
         latestVersion={latestVersion}
         onClose={() => setDismissedUpdate(true)}
-      />
-      <LocalModelDialog
-        open={showLocalDialog}
-        onClose={() => setShowLocalDialog(false)}
-        onDownloaded={(path) =>
-          updateSettings({ localModelReady: true, localModelPath: path, aiMode: settings.aiMode })
-        }
-        title="Download local AI (first launch)"
       />
     </div>
   )

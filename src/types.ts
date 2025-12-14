@@ -29,20 +29,14 @@ export interface Subscription {
 
 export interface AppSettings {
   currency: string
-  geminiApiKey: string
-  geminiKeyValid?: boolean
-  geminiKeyLastChecked?: string
-  aiMode?: 'cloud' | 'local'
-  localModelPath?: string
-  localModelReady?: boolean
-  localModelLastChecked?: string
-  localModelPrompted?: boolean
   firstName: string
+  mintAiReady?: boolean
+  mintAiLastLoaded?: string
+  mintAiError?: string | null
+  premiumEnabled?: boolean
+  premiumToken?: string | null
+  premiumLastChecked?: string
+  premiumError?: string | null
   createdAt?: string
   updatedAt?: string
-}
-
-export interface GeminiPrediction {
-  summary: string
-  totalEstimate?: number
 }

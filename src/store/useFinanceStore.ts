@@ -21,13 +21,14 @@ type FinanceActions = {
 
 const defaultSettings: AppSettings = {
   currency: 'USD',
-  geminiApiKey: '',
-  geminiKeyValid: false,
-  aiMode: 'cloud',
-  localModelPath: '',
-  localModelReady: false,
-  localModelPrompted: false,
   firstName: '',
+  mintAiReady: false,
+  mintAiLastLoaded: undefined,
+  mintAiError: null,
+  premiumEnabled: false,
+  premiumToken: null,
+  premiumLastChecked: undefined,
+  premiumError: null,
   createdAt: new Date().toISOString(),
   updatedAt: new Date().toISOString(),
 }

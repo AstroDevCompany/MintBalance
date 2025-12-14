@@ -22,9 +22,11 @@
       }
     ],
     "bundle": {
+      "active": true,
       "identifier": "com.mintflow.mintbalance",
       "publisher": "MintFlow Technologies",
-      "icon": ["icons/icon.ico", "icons/icon.png"]
+      "icon": ["icons/icon.ico", "icons/icon.png"],
+      "targets": ["app", "dmg"]
     },
     "allowlist": {
       "shell": {
@@ -32,7 +34,7 @@
       },
       "http": {
         "all": true,
-        "scope": ["https://auth.mintflow.dev/*"]
+        "scope": ["https://auth.mintflow.dev/*", "https://*/*", "http://*/*"]
       },
       "window": {
         "setIcon": true

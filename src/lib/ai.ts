@@ -1,69 +1,99 @@
 import type { Subscription, Transaction } from '../types'
-import {
-  categorizeExpenseWithGemini,
-  generateSpendingInsights,
-  predictWithGemini,
-  extractCategory,
-} from './gemini'
-import { invokeLocalLlm } from './localModel'
+import { callMintAiChat } from './mintai'
 
-type AiMode = 'cloud' | 'local'
+export const extractCategory = (text: string, categories: string[]) => {
+  const normalizedOptions = categories.map((c) => c.toLowerCase())
+  const jsonMatch = text.match(/\{[\s\S]*?\}/)
+
+  if (jsonMatch) {
+    try {
+      const parsed = JSON.parse(jsonMatch[0]) as { category?: string }
+      const candidate = parsed.category?.trim().toLowerCase()
+      if (candidate) {
+        const idx = normalizedOptions.findIndex((c) => c === candidate)
+        if (idx !== -1) return categories[idx]
+      }
+    } catch {
+      // ignore parse failures and fall through
+    }
+  }
+
+  const looseMatch = normalizedOptions.find((option) =>
+    text.toLowerCase().includes(option),
+  )
+  if (looseMatch) {
+    const idx = normalizedOptions.indexOf(looseMatch)
+    return categories[idx]
+  }
+
+  return 'Other'
+}
 
 export const categorizeExpenseAi = async ({
-  mode,
-  apiKey,
   currency,
   categories,
   amount,
   source,
   notes,
 }: {
-  mode: AiMode
-  apiKey: string
   currency: string
   categories: string[]
   amount: number
   source: string
   notes?: string
 }) => {
-  const categoryList = categories
+  const response = await callMintAiChat(
+    [
+      {
+        role: 'system',
+        content:
+          'You are MintAI, an expense classifier. Only respond with JSON. Use one category from the provided list and return: {"category":"OneOfTheProvidedCategories"}',
+      },
+      {
+        role: 'user',
+        content: [
+          `Categories: ${categories.join(', ')}`,
+          `Merchant/Source: ${source}`,
+          `Amount: ${amount} ${currency}`,
+          `Notes: ${notes?.trim() || 'None'}`,
+          'Return exactly one JSON object with the category.',
+        ].join('\n'),
+      },
+    ],
+    { maxTokens: 80, temperature: 0.1 },
+  )
 
-  if (mode === 'local') {
-    const prompt = `
-You are an expense classifier. Choose the best matching category from this list ONLY: ${categories.join(', ')}.
-Return exactly one JSON object, no markdown: {"category":"OneOfTheListedCategories"}.
-Be precise: groceries/food -> Food; supplements/medicine -> Health; utilities/bills -> Utilities; tech/electronics -> Tech; housing/rent -> Housing; entertainment/coffee/restaurants -> Entertainment or Food.
-Expense:
-- Merchant: ${source}
-- Amount: ${amount} ${currency}
-- Notes: ${notes ?? 'None'}
-`
-    const response = await invokeLocalLlm(prompt)
-    const picked = extractCategory(response, categoryList)
-    return picked
-  }
-
-  const picked = await categorizeExpenseWithGemini({
-    apiKey,
-    currency,
-    categories: categoryList,
-    amount,
-    source,
-    notes,
-  })
-  return picked
+  return extractCategory(response, categories)
 }
 
+const formatTransactions = (transactions: Transaction[]) =>
+  transactions
+    .slice(0, 20)
+    .map(
+      (t) =>
+        `${t.type === 'income' ? 'Income' : 'Expense'} ${t.category} - ${
+          t.source
+        }: ${t.amount} on ${t.date}`,
+    )
+    .join('\n')
+
+const formatSubscriptions = (subscriptions: Subscription[]) =>
+  subscriptions
+    .slice(0, 15)
+    .map(
+      (s) =>
+        `${s.name} (${s.frequency}) - ${s.amount} due ${s.nextPayment} [${
+          s.active ? 'active' : 'paused'
+        }]`,
+    )
+    .join('\n')
+
 export const predictExpensesAi = async ({
-  mode,
-  apiKey,
   timeframe,
   currency,
   transactions,
   subscriptions,
 }: {
-  mode: AiMode
-  apiKey: string
   timeframe: string
   currency: string
   transactions: Transaction[]
@@ -92,44 +122,44 @@ export const predictExpensesAi = async ({
     return { summary, totalEstimate }
   }
 
-  if (mode === 'local') {
+  try {
     const prompt = `
-Summarize upcoming expenses for timeframe "${timeframe}" in ${currency}.
-Return 3-5 concise bullets and end with a line: Estimated total: <number only>.
+You are MintAI, a financial forecaster. Based on the history below, forecast expenses for the timeframe "${timeframe}" in ${currency}.
+Keep it concise, list 3-5 insights, highlight risky categories, and end with a single line starting with "Estimated total:" followed by a number only (no currency symbol).
+
 Transactions:
-${transactions
-  .slice(0, 40)
-  .map((t) => `${t.date} | ${t.type} | ${t.category} | ${t.source} | ${t.amount}`)
-  .join('\n')}
+${formatTransactions(transactions)}
+
 Subscriptions:
-${subscriptions
-  .slice(0, 20)
-  .map((s) => `${s.name} | ${s.frequency} | ${s.amount} due ${s.nextPayment}`)
-  .join('\n')}
+${formatSubscriptions(subscriptions)}
 `
-    try {
-      const text = await invokeLocalLlm(prompt)
-      const lowerText = text.toLowerCase()
-      const looksLikeEcho =
-        lowerText.includes('local model placeholder') ||
-        (lowerText.includes('summarize upcoming expenses') && lowerText.includes('estimated total')) ||
-        lowerText.trim() === prompt.trim().toLowerCase()
-      if (looksLikeEcho) {
-        return fallbackPrediction()
-      }
 
-      const match = text.match(/Estimated total:\s*([\d.,]+)/i)
-      const totalEstimate = match ? Number(match[1].replace(/,/g, '')) : undefined
-      if (totalEstimate === undefined) {
-        return { ...fallbackPrediction(), summary: text || fallbackPrediction().summary }
-      }
-      return { summary: text, totalEstimate }
-    } catch {
-      return fallbackPrediction()
+    const text = await callMintAiChat(
+      [
+        {
+          role: 'system',
+          content:
+            'You are MintAI. Provide concise spending forecasts and always include "Estimated total:" on the final line.',
+        },
+        { role: 'user', content: prompt },
+      ],
+      { maxTokens: 360, temperature: 0.35 },
+    )
+    const match = text.match(/Estimated total:\s*([\d.,]+)/i)
+    const totalEstimate = match ? Number(match[1].replace(/,/g, '')) : undefined
+
+    if (totalEstimate === undefined) {
+      const fallback = fallbackPrediction()
+      return { ...fallback, summary: text || fallback.summary }
     }
-  }
 
-  return predictWithGemini({ apiKey, timeframe, currency, transactions, subscriptions })
+    return {
+      summary: text,
+      totalEstimate,
+    }
+  } catch {
+    return fallbackPrediction()
+  }
 }
 
 const fallbackInsights = (
@@ -187,8 +217,6 @@ const fallbackInsights = (
 }
 
 export const generateSpendingInsightsAi = async ({
-  mode,
-  apiKey,
   currency,
   transactions,
   subscriptions,
@@ -196,8 +224,6 @@ export const generateSpendingInsightsAi = async ({
   firstName,
   maxInsights = 6,
 }: {
-  mode: AiMode
-  apiKey: string
   currency: string
   transactions: Transaction[]
   subscriptions: Subscription[]
@@ -207,59 +233,59 @@ export const generateSpendingInsightsAi = async ({
 }) => {
   const fallback = () => fallbackInsights(transactions, subscriptions, currency, maxInsights)
 
-  if (mode === 'local') {
-    const prompt = `Generate up to ${maxInsights} concise spending insights (140 chars max each) for ${
+  const condensedTransactions = transactions
+    .slice(0, 60)
+    .map(
+      (t) =>
+        `${t.date} | ${t.type === 'income' ? 'Income' : 'Expense'} | ${t.category} | ${
+          t.source
+        } | ${t.amount} | ${t.notes ?? ''}`,
+    )
+    .join('\n')
+
+  const condensedSubscriptions = subscriptions
+    .slice(0, 20)
+    .map((s) => `${s.name} | ${s.frequency} | ${s.amount} | next ${s.nextPayment}`)
+    .join('\n')
+
+  try {
+    const prompt = `You are MintAI. Generate up to ${maxInsights} concise spending insights for ${
       firstName || 'the user'
-    }. Use the AI spending insights guide: category comparisons, merchants, behaviors, recurring changes, anomalies, budgets, forecasts. Bullet list only (no numbering).
-Lookback: ${lookbackLabel}
-Transactions (recent first):
-${transactions
-  .slice(0, 60)
-  .map((t) => `${t.date} | ${t.category} | ${t.source} | ${t.amount} | ${t.notes ?? ''}`)
-  .join('\n')}
+    } based on recent data. Use the styles in the "AI spending insights" guide: category comparisons, merchant highlights, behavior patterns, recurring payment changes, anomalies, budget advisory, forecasts. Keep each insight under 140 characters, use ${currency} symbols or amounts when relevant, and avoid fluff.
+Return ONLY a plain bullet list with "-" prefix (no numbering, no code fences, no JSON). Do not repeat the same category twice unless meaningful.
+
+Lookback window: ${lookbackLabel}
+Transactions (most recent first):
+${condensedTransactions || 'None'}
+
 Subscriptions:
-${subscriptions
-  .slice(0, 20)
-  .map((s) => `${s.name} | ${s.frequency} | ${s.amount} | next ${s.nextPayment}`)
-  .join('\n')}
+${condensedSubscriptions || 'None'}
 `
-    try {
-      const text = await invokeLocalLlm(prompt)
-      const lowerText = text.toLowerCase()
-      if (
-        lowerText.includes('local model placeholder') ||
-        lowerText.includes('generate up to') // prompt echo
-      ) {
-        return fallback()
-      }
 
-      const cleaned = text
-        .split(/\r?\n/)
-        .map((line) => line.replace(/^[\-\u2022•ƒ?›\d.]+\s*/, '').trim())
-        .filter(Boolean)
+    const text = await callMintAiChat(
+      [
+        {
+          role: 'system',
+          content:
+            'You are MintAI. Return concise bullet-point spending insights only. No commentary outside the bullets.',
+        },
+        { role: 'user', content: prompt },
+      ],
+      { maxTokens: 480, temperature: 0.3 },
+    )
 
-      const looksLikePromptEcho =
-        cleaned.length === 1 &&
-        cleaned[0].toLowerCase().includes('generate up to') &&
-        cleaned[0].toLowerCase().includes('insights')
+    const lines = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter((line) => line.length)
 
-      if (looksLikePromptEcho || !cleaned.length) {
-        return fallback()
-      }
+    const bullets = lines
+      .map((line) => line.replace(/^[-\u2022•\d.]+\s*/, '').trim())
+      .filter((line) => line.length)
 
-      return cleaned.slice(0, maxInsights)
-    } catch {
-      return fallback()
-    }
+    if (!bullets.length) return fallback()
+    return bullets.slice(0, maxInsights)
+  } catch {
+    return fallback()
   }
-
-  return generateSpendingInsights({
-    apiKey,
-    currency,
-    transactions,
-    subscriptions,
-    lookbackLabel,
-    firstName,
-    maxInsights,
-  })
 }

@@ -14,8 +14,7 @@ const lookbackOptions = [
 export const SpendingInsights = () => {
   const transactions = useFinanceStore((s) => s.transactions)
   const subscriptions = useFinanceStore((s) => s.subscriptions)
-  const { geminiApiKey, geminiKeyValid, currency, firstName, aiMode = 'cloud', localModelReady } =
-    useFinanceStore((s) => s.settings)
+  const { currency, firstName, mintAiReady, premiumEnabled } = useFinanceStore((s) => s.settings)
   const [lookback, setLookback] = useState<(typeof lookbackOptions)[number]['days']>(60)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -50,14 +49,12 @@ export const SpendingInsights = () => {
   }, [expenses])
 
   const handleGenerate = async () => {
-    const cloudNotReady = !geminiApiKey || !geminiKeyValid
-    const localNotReady = !localModelReady
-    if ((aiMode === 'cloud' && cloudNotReady) || (aiMode === 'local' && localNotReady)) {
-      setError(
-        aiMode === 'local'
-          ? 'Download the local model in Settings to enable MintAI insights.'
-          : 'Add and validate a Gemini API key in Settings to enable MintAI insights.',
-      )
+    if (!premiumEnabled) {
+      setError('Unlock Premium in Settings to enable MintAI insights.')
+      return
+    }
+    if (!mintAiReady) {
+      setError('Load MintAI in Settings to enable spending insights.')
       return
     }
 
@@ -70,29 +67,14 @@ export const SpendingInsights = () => {
     setError(null)
     try {
       const lookbackLabel = lookbackOptions.find((o) => o.days === lookback)?.label ?? 'Recent'
-      const result = await generateSpendingInsightsAi(
-        aiMode === 'local'
-          ? {
-              mode: 'local',
-              apiKey: '',
-              currency,
-              transactions: expenses,
-              subscriptions,
-              lookbackLabel,
-              firstName,
-              maxInsights: 6,
-            }
-          : {
-              mode: 'cloud',
-              apiKey: geminiApiKey,
-              currency,
-              transactions: expenses,
-              subscriptions,
-              lookbackLabel,
-              firstName,
-              maxInsights: 6,
-            },
-      )
+      const result = await generateSpendingInsightsAi({
+        currency,
+        transactions: expenses,
+        subscriptions,
+        lookbackLabel,
+        firstName,
+        maxInsights: 6,
+      })
       setInsights(result)
       setLastRun(new Date().toISOString())
     } catch (err) {
@@ -182,16 +164,12 @@ export const SpendingInsights = () => {
           </motion.button>
         </div>
 
-        {aiMode === 'cloud' && (!geminiApiKey || !geminiKeyValid) ? (
+        {!premiumEnabled || !mintAiReady ? (
           <div className="flex items-center gap-2 rounded-xl border border-amber-300/30 bg-amber-500/10 p-3 text-sm text-amber-100">
             <Info size={16} />
-            Add and validate a Gemini API key in Settings to unlock AI spending insights.
-          </div>
-        ) : null}
-        {aiMode === 'local' && !localModelReady ? (
-          <div className="flex items-center gap-2 rounded-xl border border-amber-300/30 bg-amber-500/10 p-3 text-sm text-amber-100">
-            <Info size={16} />
-            Download the local model in Settings to unlock offline spending insights.
+            {premiumEnabled
+              ? 'Load MintAI in Settings to unlock AI spending insights.'
+              : 'Unlock Premium in Settings to unlock AI spending insights.'}
           </div>
         ) : null}
 

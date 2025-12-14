@@ -1,34 +1,31 @@
-import { useEffect, useState } from 'react'
+import { useState } from 'react'
 import { motion } from 'framer-motion'
 import { Shield, Sparkles, Trash2 } from 'lucide-react'
 import { open } from '@tauri-apps/api/shell'
 import { useFinanceStore } from '../store/useFinanceStore'
 import { useUpdateCheck } from '../hooks/useUpdateCheck'
 import { AuthPanel } from '../components/AuthPanel'
-import { validateGeminiKey } from '../lib/gemini'
-import { LocalModelDialog } from '../components/LocalModelDialog'
-import { getModelStatus, removeModel } from '../lib/localModel'
+import { fetchMintAiKey } from '../lib/mintai'
+import { verifyLicenseKey } from '../lib/premium'
 
 const currencies = ['USD', 'EUR', 'GBP', 'CHF', 'CAD', 'AUD']
 
 export const Settings = () => {
-  const { currency, geminiApiKey, geminiKeyValid, aiMode, localModelReady, firstName } =
-    useFinanceStore((s) => s.settings)
+  const { currency, mintAiReady, mintAiLastLoaded, mintAiError, firstName, premiumEnabled } =
+    useFinanceStore(
+      (s) => s.settings,
+    )
   const updateSettings = useFinanceStore((s) => s.updateSettings)
   const clearAll = useFinanceStore((s) => s.clearAll)
-  const [apiKey, setApiKey] = useState(geminiApiKey)
-  const [apiStatus, setApiStatus] = useState<'idle' | 'checking' | 'valid' | 'error'>(
-    geminiApiKey && geminiKeyValid ? 'valid' : 'idle',
+  const [keyLoading, setKeyLoading] = useState(false)
+  const [keyMessage, setKeyMessage] = useState<string | null>(null)
+  const [licenseKey, setLicenseKey] = useState('')
+  const [licenseStatus, setLicenseStatus] = useState<'idle' | 'checking' | 'success' | 'error'>(
+    premiumEnabled ? 'success' : 'idle',
   )
-  const [apiMessage, setApiMessage] = useState<string | null>(null)
-  const [aiChoice, setAiChoice] = useState<'cloud' | 'local'>(aiMode ?? 'cloud')
-  const [localDialogOpen, setLocalDialogOpen] = useState(false)
+  const [licenseMessage, setLicenseMessage] = useState<string | null>(null)
   const appVersion = import.meta.env.VITE_APP_VERSION ?? '1.0.0'
   const { available, latestVersion } = useUpdateCheck(appVersion)
-
-  useEffect(() => {
-    setAiChoice(aiMode ?? 'cloud')
-  }, [aiMode])
 
   const handleClear = () => {
     if (
@@ -40,67 +37,61 @@ export const Settings = () => {
     }
   }
 
-  const handleApiSave = async () => {
-    const trimmed = apiKey.trim()
-    if (!trimmed) {
-      updateSettings({
-        geminiApiKey: '',
-        geminiKeyValid: false,
-        geminiKeyLastChecked: new Date().toISOString(),
-      })
-      setApiStatus('idle')
-      setApiMessage(null)
-      return
-    }
-
-    setApiStatus('checking')
-    setApiMessage(null)
+  const handleRefreshKey = async () => {
+    setKeyLoading(true)
+    setKeyMessage(null)
     try {
-      await validateGeminiKey(trimmed)
+      await fetchMintAiKey(true)
       updateSettings({
-        geminiApiKey: trimmed,
-        geminiKeyValid: true,
-        geminiKeyLastChecked: new Date().toISOString(),
+        mintAiReady: true,
+        mintAiLastLoaded: new Date().toISOString(),
+        mintAiError: null,
       })
-      setApiStatus('valid')
+      setKeyMessage('MintAI is ready for this session.')
     } catch (err) {
-      const message =
-        err instanceof Error ? err.message : 'Unable to verify your Gemini API key.'
+      const message = err instanceof Error ? err.message : 'MintAI is unavailable right now.'
       updateSettings({
-        geminiApiKey: trimmed,
-        geminiKeyValid: false,
-        geminiKeyLastChecked: new Date().toISOString(),
+        mintAiReady: false,
+        mintAiLastLoaded: new Date().toISOString(),
+        mintAiError: message,
       })
-      setApiStatus('error')
-      setApiMessage(message)
+      setKeyMessage('MintAI is unavailable right now. Try again soon.')
+    } finally {
+      setKeyLoading(false)
     }
   }
 
-  const handleAiModeChange = async (mode: 'cloud' | 'local') => {
-    if (mode === 'cloud') {
-      setAiChoice('cloud')
-      updateSettings({ aiMode: 'cloud' })
+  const handleValidateLicense = async () => {
+    const trimmed = licenseKey.trim()
+    if (!trimmed) {
+      setLicenseStatus('error')
+      setLicenseMessage('Enter a license key to continue.')
       return
     }
-
-    const { exists, path } = await getModelStatus()
-    if (!exists) {
-      setLocalDialogOpen(true)
-      return
+    setLicenseStatus('checking')
+    setLicenseMessage(null)
+    try {
+      const { token } = await verifyLicenseKey(trimmed)
+      updateSettings({
+        premiumEnabled: true,
+        premiumToken: token,
+        premiumLastChecked: new Date().toISOString(),
+        premiumError: null,
+      })
+      setLicenseStatus('success')
+      setLicenseMessage('Premium unlocked on this device.')
+      setLicenseKey('')
+    } catch (err) {
+      const message = err instanceof Error ? err.message : 'Could not validate that license.'
+      updateSettings({
+        premiumEnabled: false,
+        premiumToken: null,
+        premiumLastChecked: new Date().toISOString(),
+        premiumError: message,
+      })
+      setLicenseStatus('error')
+      setLicenseMessage(message)
     }
-    setAiChoice('local')
-    updateSettings({ aiMode: 'local', localModelReady: true, localModelPath: path })
-  }
-
-  const handleRemoveLocalModel = async () => {
-    await removeModel()
-    const status = await getModelStatus()
-    updateSettings({
-      aiMode: 'cloud',
-      localModelReady: status.exists,
-      localModelPath: status.path,
-    })
-    setAiChoice('cloud')
   }
 
   return (
@@ -170,113 +161,131 @@ export const Settings = () => {
         <div className="rounded-2xl border border-white/10 bg-white/5 p-4 shadow-xl space-y-3">
           <div className="flex items-center justify-between gap-2 text-sm font-semibold text-white">
             <span className="inline-flex items-center gap-2">
-              <Sparkles size={16} /> MintAI
+              <Shield size={16} /> Premium
             </span>
-            <div className="flex gap-2 rounded-xl bg-white/5 p-1">
-              {(['cloud', 'local'] as const).map((mode) => (
-                <button
-                  key={mode}
-                  type="button"
-                  onClick={() => handleAiModeChange(mode)}
-                  className={`rounded-lg px-3 py-1 text-xs font-semibold transition ${
-                    aiChoice === mode
-                      ? 'bg-gradient-to-r from-teal-400 via-cyan-400 to-emerald-400 text-slate-900'
-                      : 'text-slate-200 hover:bg-white/10'
-                  }`}
-                >
-                  {mode === 'cloud' ? 'Cloud' : 'Local'}
-                </button>
-              ))}
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                premiumEnabled
+                  ? 'bg-emerald-400/20 text-emerald-100'
+                  : 'bg-amber-400/20 text-amber-100'
+              }`}
+            >
+              {premiumEnabled ? 'Unlocked' : 'Locked'}
+            </span>
+          </div>
+          <p className="text-sm text-slate-200">
+            Enter your license key to unlock MintAI and other premium features on this device.
+          </p>
+          <div className="space-y-2 rounded-xl border border-white/10 bg-black/30 p-3 text-xs text-slate-300">
+            <p>
+              Status:{' '}
+              <span className={licenseStatus === 'error' ? 'text-rose-200' : 'text-emerald-200'}>
+                {premiumEnabled
+                  ? 'Premium is active on this device.'
+                  : licenseStatus === 'checking'
+                    ? 'Checking license...'
+                    : 'Not unlocked yet.'}
+              </span>
+            </p>
+            <p>
+              Last check:{' '}
+              <span className="font-semibold text-white">
+                {licenseStatus === 'checking'
+                  ? 'Validating...'
+                  : licenseStatus === 'success'
+                    ? 'Just now'
+                    : premiumEnabled && licenseStatus === 'idle'
+                      ? 'Verified earlier'
+                      : 'Not checked yet'}
+              </span>
+            </p>
+          </div>
+          <div className="space-y-2">
+            <label className="text-sm text-slate-200">
+              License key
+              <input
+                value={licenseKey}
+                onChange={(e) => {
+                  setLicenseKey(e.target.value)
+                  setLicenseStatus(premiumEnabled ? 'success' : 'idle')
+                  setLicenseMessage(null)
+                }}
+                placeholder="XXXX-XXXX-XXXX-XXXX"
+                className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white outline-none transition focus:border-teal-300 focus:bg-white/10"
+              />
+            </label>
+            <div className="flex justify-end">
+              <motion.button
+                whileTap={{ scale: 0.98 }}
+                onClick={handleValidateLicense}
+                disabled={licenseStatus === 'checking'}
+                className="rounded-xl bg-gradient-to-r from-emerald-400 via-teal-400 to-cyan-400 px-4 py-2 text-sm font-semibold text-slate-900 shadow-glow transition hover:brightness-105 disabled:opacity-60"
+              >
+                {licenseStatus === 'checking' ? 'Validating...' : 'Unlock Premium'}
+              </motion.button>
             </div>
           </div>
-
-          {aiChoice === 'cloud' && (
-            <>
-              <label className="text-sm text-slate-200">
-                Gemini API key
-                <input
-                  value={apiKey}
-                  onChange={(e) => {
-                    setApiKey(e.target.value)
-                    setApiStatus('idle')
-                    setApiMessage(null)
-                  }}
-                  placeholder="Paste your Gemini API key"
-                  className="mt-2 w-full rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-white outline-none transition focus:border-teal-300 focus:bg-white/10"
-                />
-              </label>
-              <div className="flex justify-end">
-                <motion.button
-                  whileTap={{ scale: 0.98 }}
-                  onClick={handleApiSave}
-                  disabled={apiStatus === 'checking'}
-                  className="rounded-xl bg-gradient-to-r from-teal-400 via-cyan-400 to-emerald-400 px-4 py-2 text-sm font-semibold text-slate-900 shadow-glow transition hover:brightness-105 disabled:opacity-60"
-                >
-                  {apiStatus === 'checking' ? 'Validating...' : 'Save API key'}
-                </motion.button>
-              </div>
-              <p className="text-xs text-slate-400">
-                Optional. Used to forecast expenses and auto-categorize new expenses via MintAI.
-              </p>
-              {apiMessage && <p className="text-sm text-rose-200">{apiMessage}</p>}
-              {apiStatus === 'valid' && (
-                <p className="text-xs text-emerald-200">
-                  MintAI is enabled for expense auto-categorization.
-                </p>
-              )}
-            </>
+          {licenseMessage && (
+            <p
+              className={`text-sm ${
+                licenseStatus === 'error' ? 'text-rose-200' : 'text-emerald-200'
+              }`}
+            >
+              {licenseMessage}
+            </p>
           )}
+        </div>
 
-          {aiChoice === 'local' && (
-            <div className="space-y-3">
-              <div className="rounded-xl border border-white/10 bg-black/30 p-3 text-sm text-slate-200">
-                <p className="font-semibold text-white">Local AI</p>
-                <p className="text-xs text-slate-400">
-                  Runs WizardLM locally for offline MintAI. Requires the GGUF model file. Current
-                  status:{' '}
-                  <span
-                    className={`font-semibold ${
-                      localModelReady ? 'text-emerald-200' : 'text-amber-200'
-                    }`}
-                  >
-                    {localModelReady ? 'Model ready' : 'Model missing'}
-                  </span>
-                </p>
-              </div>
-              {localModelReady ? (
-                <div className="flex flex-wrap gap-2">
-                  <motion.button
-                    whileTap={{ scale: 0.98 }}
-                    onClick={handleRemoveLocalModel}
-                    className="inline-flex items-center gap-2 rounded-xl border border-rose-300/60 bg-rose-500/10 px-4 py-2 text-sm font-semibold text-rose-100 transition hover:bg-rose-500/20"
-                  >
-                    Remove local model
-                  </motion.button>
-                </div>
-              ) : (
-                <>
-                  <div className="flex flex-wrap gap-2">
-                    <motion.button
-                      whileTap={{ scale: 0.98 }}
-                      onClick={() => setLocalDialogOpen(true)}
-                      className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-teal-400 via-cyan-400 to-emerald-400 px-4 py-2 text-sm font-semibold text-slate-900 shadow-glow transition hover:brightness-105"
-                    >
-                      Manage local model
-                    </motion.button>
-                    <button
-                      onClick={() => handleAiModeChange('cloud')}
-                      className="rounded-xl border border-white/10 px-4 py-2 text-sm font-semibold text-slate-200 transition hover:bg-white/5"
-                    >
-                      Switch back to cloud
-                    </button>
-                  </div>
-                  <p className="text-xs text-amber-200">
-                    Download or place the model before MintAI can run locally.
-                  </p>
-                </>
-              )}
-            </div>
-          )}
+        <div className="rounded-2xl border border-white/10 bg-white/5 p-4 shadow-xl space-y-3">
+          <div className="flex items-center justify-between gap-2 text-sm font-semibold text-white">
+            <span className="inline-flex items-center gap-2">
+              <Sparkles size={16} /> MintAI
+            </span>
+            <span
+              className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                mintAiReady
+                  ? 'bg-emerald-400/20 text-emerald-100'
+                  : 'bg-amber-400/20 text-amber-100'
+              }`}
+            >
+              {mintAiReady ? 'Ready' : 'Not ready'}
+            </span>
+          </div>
+
+          <p className="text-sm text-slate-200">
+            MintAI runs in the cloud. Refresh if you see issues with insights or auto-categorization.
+          </p>
+
+          <div className="space-y-2 rounded-xl border border-white/10 bg-black/30 p-3 text-xs text-slate-300">
+            <p>
+              Last check:{' '}
+              <span className="font-semibold text-white">
+                {mintAiLastLoaded
+                  ? new Date(mintAiLastLoaded).toLocaleString()
+                  : 'Not checked yet'}
+              </span>
+            </p>
+            <p className={mintAiError ? 'text-rose-200' : 'text-emerald-200'}>
+              Status:{' '}
+              {mintAiError
+                ? 'MintAI is unavailable right now.'
+                : mintAiReady
+                  ? 'MintAI is ready for this session.'
+                  : 'MintAI is not ready yet.'}
+            </p>
+          </div>
+
+          <div className="flex justify-end">
+            <motion.button
+              whileTap={{ scale: 0.98 }}
+              onClick={handleRefreshKey}
+              disabled={keyLoading}
+              className="rounded-xl bg-gradient-to-r from-teal-400 via-cyan-400 to-emerald-400 px-4 py-2 text-sm font-semibold text-slate-900 shadow-glow transition hover:brightness-105 disabled:opacity-60"
+            >
+              {keyLoading ? 'Loading...' : 'Refresh MintAI'}
+            </motion.button>
+          </div>
+          {keyMessage && <p className="text-sm text-slate-200">{keyMessage}</p>}
         </div>
       </div>
 
@@ -300,17 +309,6 @@ export const Settings = () => {
           </motion.button>
         </div>
       </div>
-
-      <LocalModelDialog
-        open={localDialogOpen}
-        onClose={() => setLocalDialogOpen(false)}
-        onDownloaded={(path) => {
-          setAiChoice('local')
-          updateSettings({ aiMode: 'local', localModelReady: true, localModelPath: path })
-          setLocalDialogOpen(false)
-        }}
-        title="Download local AI model"
-      />
     </div>
   )
 }
