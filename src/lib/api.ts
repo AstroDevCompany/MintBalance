@@ -1,5 +1,6 @@
 import type { AppSettings, Subscription, Transaction } from '../types'
 import { fetch as tauriFetch, ResponseType } from '@tauri-apps/api/http'
+import type { HttpVerb } from '@tauri-apps/api/http'
 
 const BASE_URL = 'https://auth.mintflow.dev'
 
@@ -16,8 +17,9 @@ const jsonFetch = async <T = JsonRecord>(path: string, options: RequestInit = {}
 
   try {
     if (isTauri()) {
+      const method = ((options.method ?? 'GET') as string).toUpperCase() as HttpVerb
       const res = await tauriFetch<T | JsonRecord | string>(url, {
-        method: ((options.method as string | undefined) ?? 'GET') as any,
+        method,
         headers,
         body:
           options.body && typeof options.body === 'string'

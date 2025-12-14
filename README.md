@@ -6,9 +6,9 @@ MintBalance is a minimal, animation-rich desktop cockpit for tracking income, ex
 
 - Add and review incomes/expenses with category and notes
 - Subscription tracker with renewal reminders and monthly burn calculator
-- MintAI: cloud (Gemini) and local (WizardLM GGUF) powered insights, predictions, and expense auto-categorization
+- MintAI: OpenRouter-powered (mistralai/devstral-2512:free) insights, predictions, and expense auto-categorization with a runtime-loaded key
 - Dashboard with cashflow and category charts plus toggleable views
-- Spending Insights page with MintAI (Gemini) summaries across categories, merchants, anomalies, and forecasts
+- Spending Insights page with MintAI summaries across categories, merchants, anomalies, and forecasts
 - Persistent local storage for all data and settings
 - First-launch name prompt and one-click data wipe in Settings
 - Update checker: compares current version to a remote text file and surfaces a download CTA on launch and in Settings
@@ -16,11 +16,10 @@ MintBalance is a minimal, animation-rich desktop cockpit for tracking income, ex
 
 ## MintAI setup
 
-1. Go to Settings -> MintAI, choose **Cloud** or **Local**.
-   - Cloud: paste your Gemini API key and click **Save API key** to validate it. The status pill will show **Ready** when enabled.
-   - Local: download or place `MintAI.gguf` in your app config models folder (e.g., on Windows: `C:\Users\<you>\AppData\Roaming\com.mintflow.mintbalance\models\MintAI.gguf`). When the model is present, the UI shows “Model ready.” You can remove it via **Remove local model**.
-2. In the Transactions page, choose **Expense** and pick **Auto (MintAI)** to auto-categorize the expense with the selected AI mode.
-3. Open the **Spending Insights** page, choose a lookback window, and click **Generate with MintAI** (uses the selected AI mode) to get high-signal spending insights (categories, merchants, anomalies, forecasts).
+1. The app pulls a MintAI API key at runtime from a raw URL (see `src/lib/mintai.ts` for the placeholder). Update that URL to your own private raw file; the key is never stored in code or local storage.
+2. Go to Settings -> MintAI and click **Refresh MintAI key** to fetch it on demand. The status pill shows when the key is ready for the session.
+3. In the Transactions page, choose **Expense** and pick **Auto (MintAI)** to auto-categorize the expense.
+4. Open the **Spending Insights** page, choose a lookback window, and click **Generate with MintAI** to get high-signal spending insights (categories, merchants, anomalies, forecasts).
 
 ## Keyboard & form QoL
 
@@ -36,7 +35,6 @@ MintBalance is a minimal, animation-rich desktop cockpit for tracking income, ex
 - `npm run build` - build the web assets
 - `npm run tauri:build` - production desktop build
 - `npm run lint` - lint the codebase
-- `cargo build --release --features gpu` - build with cuda
 
 ## Tauri configuration
 

@@ -16,8 +16,7 @@ const presets = [
 export const PredictionPanel = () => {
   const transactions = useFinanceStore((s) => s.transactions)
   const subscriptions = useFinanceStore((s) => s.subscriptions)
-  const { geminiApiKey, geminiKeyValid, currency, aiMode = 'cloud', localModelReady } =
-    useFinanceStore((s) => s.settings)
+  const { currency, mintAiReady, premiumEnabled } = useFinanceStore((s) => s.settings)
   const [selected, setSelected] = useState<(typeof presets)[number]['id']>('90')
   const [customDays, setCustomDays] = useState(45)
   const [loading, setLoading] = useState(false)
@@ -32,39 +31,24 @@ export const PredictionPanel = () => {
   }, [customDays, selected])
 
   const handlePredict = async () => {
-    const cloudNotReady = !geminiApiKey || !geminiKeyValid
-    const localNotReady = !localModelReady
-    if ((aiMode === 'cloud' && cloudNotReady) || (aiMode === 'local' && localNotReady)) {
-      setError(
-        aiMode === 'local'
-          ? 'Download and ready the local model in Settings to use MintAI.'
-          : 'Add and validate a Gemini API key in Settings to use MintAI.',
-      )
+    if (!premiumEnabled) {
+      setError('Unlock Premium in Settings to use MintAI projections.')
+      return
+    }
+    if (!mintAiReady) {
+      setError('Refresh MintAI in Settings to enable projections.')
       return
     }
 
     setLoading(true)
     setError(null)
     try {
-      const prediction = await predictExpensesAi(
-        aiMode === 'local'
-          ? {
-              mode: 'local',
-              apiKey: '',
-              timeframe,
-              currency,
-              transactions,
-              subscriptions,
-            }
-          : {
-              mode: 'cloud',
-              apiKey: geminiApiKey,
-              timeframe,
-              currency,
-              transactions,
-              subscriptions,
-            },
-      )
+      const prediction = await predictExpensesAi({
+        timeframe,
+        currency,
+        transactions,
+        subscriptions,
+      })
       setResult(prediction)
     } catch (err) {
       const message =
@@ -130,14 +114,13 @@ export const PredictionPanel = () => {
           {loading ? 'Thinking...' : 'Predict with MintAI'}
         </motion.button>
       </div>
-      {((aiMode === 'cloud' && (!geminiApiKey || !geminiKeyValid)) ||
-        (aiMode === 'local' && !localModelReady)) && (
+      {!premiumEnabled || !mintAiReady ? (
         <p className="mt-3 text-sm text-amber-200">
-          {aiMode === 'local'
-            ? 'Download the local model in Settings to enable offline AI projections.'
-            : 'Add and validate a MintAI API key in Settings to enable AI projections.'}
+          {premiumEnabled
+            ? 'Load MintAI in Settings to enable AI projections.'
+            : 'Unlock Premium in Settings to enable AI projections.'}
         </p>
-      )}
+      ) : null}
       {error && <p className="mt-3 text-sm text-rose-200">{error}</p>}
       {result && (
         <div className="mt-4 space-y-2 rounded-xl border border-white/10 bg-black/20 p-3 text-sm text-slate-100">

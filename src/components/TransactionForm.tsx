@@ -15,8 +15,7 @@ const autoCategoryValue = '__auto__'
 
 export const TransactionForm = () => {
   const addTransaction = useFinanceStore((s) => s.addTransaction)
-  const { currency, geminiApiKey, geminiKeyValid, aiMode = 'cloud', localModelReady } =
-    useFinanceStore((s) => s.settings)
+  const { currency, mintAiReady, premiumEnabled } = useFinanceStore((s) => s.settings)
   const [type, setType] = useState<TransactionKind>('income')
   const [source, setSource] = useState('')
   const [category, setCategory] = useState(categories.income[0])
@@ -32,10 +31,7 @@ export const TransactionForm = () => {
   const notesRef = useRef<HTMLTextAreaElement | null>(null)
   const submitRef = useRef<HTMLButtonElement | null>(null)
 
-  const aiEnabled =
-    aiMode === 'local'
-      ? Boolean(localModelReady)
-      : Boolean(geminiApiKey && geminiKeyValid)
+  const aiEnabled = Boolean(mintAiReady && premiumEnabled)
 
   useEffect(() => {
     sourceRef.current?.focus()
@@ -49,11 +45,7 @@ export const TransactionForm = () => {
     }
   }, [aiEnabled, category, type])
 
-  const handleEnterFocus = (
-    e: KeyboardEvent<HTMLElement>,
-    next?: HTMLElement | null,
-    allowShiftSubmit = false,
-  ) => {
+  const handleEnterFocus = (e: KeyboardEvent, next?: HTMLElement | null, allowShiftSubmit = false) => {
     if (e.key !== 'Enter') return
     if (e.shiftKey && allowShiftSubmit) return
     e.preventDefault()
@@ -84,15 +76,9 @@ export const TransactionForm = () => {
 
       if (type === 'expense' && category === autoCategoryValue) {
         if (!aiEnabled) {
-          throw new Error(
-            aiMode === 'local'
-              ? 'Local MintAI is not ready. Download the model first.'
-              : 'MintAI is not enabled. Save a valid Gemini key in Settings first.',
-          )
+          throw new Error('MintAI is locked. Unlock Premium and refresh in Settings.')
         }
         finalCategory = await categorizeExpenseAi({
-          mode: aiMode,
-          apiKey: geminiApiKey,
           amount: parsed,
           currency,
           source: trimmedSource,
@@ -225,7 +211,7 @@ export const TransactionForm = () => {
         <textarea
           value={notes}
           onChange={(e) => setNotes(e.target.value)}
-          onKeyDown={(e) => handleEnterFocus(e as any, submitRef.current, true)}
+          onKeyDown={(e) => handleEnterFocus(e, submitRef.current, true)}
           ref={notesRef}
           rows={2}
           placeholder="Optional context, tags, ids..."
